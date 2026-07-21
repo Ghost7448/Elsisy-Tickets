@@ -72,7 +72,7 @@ client.once('clientReady', async () => {
 });
 
     const embed = new EmbedBuilder()
-        .setColor('#ffcc00')
+        .setColor('#584702')
         .setTitle('📩 Elsisy Support Center')
         .setDescription(`**
 ## 🎟️ نظام التذاكر
