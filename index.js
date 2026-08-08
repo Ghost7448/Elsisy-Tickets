@@ -424,7 +424,7 @@ if (interaction.isModalSubmit()) {
 
         const currentName = interaction.channel.name;
 
-const match = currentName.match(/^ticket_(\d+)/);
+const match = currentName.match(/(?:ticket_)?(\d+)/);
 
 const ticketNumber = match ? match[1] : '0000';
 
