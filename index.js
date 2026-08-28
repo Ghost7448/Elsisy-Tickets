@@ -552,11 +552,33 @@ await logChannel.send({
 
         const claimedBy = claimedTickets.get(interaction.channel.id);
 
-const transcript = await transcripts.createTranscript(interaction.channel, {
-    limit: -1,
-    returnType: 'attachment',
-    fileName: `${interaction.channel.name}.html`
-});
+const transcript = await createCustomTranscript(
+    interaction.channel,
+    {
+        ticketNumber:
+            interaction.channel.name.match(/\d+/)?.[0] || "0000",
+
+        owner:
+            interaction.channel.permissionOverwrites.cache
+                .filter(overwrite =>
+                    overwrite.type === 1 &&
+                    overwrite.allow.has(
+                        PermissionsBitField.Flags.ViewChannel
+                    )
+                )
+                .map(overwrite =>
+                    interaction.guild.members.cache.get(overwrite.id)?.user?.username
+                )
+                .filter(Boolean)[0] || "غير معروف",
+
+        type: "Ticket",
+
+        claimedBy:
+            claimedBy
+                ? interaction.guild.members.cache.get(claimedBy)?.user?.username
+                : "لم يتم الاستلام"
+    }
+);
 
 const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
 
