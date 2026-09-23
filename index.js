@@ -69,7 +69,8 @@ function isClaimedBy(member, channelId) {
 }
 
 function canManageTicket(member, channelId) {
-    return isStaff(member) && isClaimedBy(member, channelId);
+    // Management is available to every configured Staff member.
+    return isStaff(member);
 }
 
 function ticketNumber(channel) {
@@ -169,8 +170,8 @@ function ticketButtons(closed = false) {
     }
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('claim_ticket').setLabel('استلام').setEmoji('📌').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('close_ticket').setLabel('اغلاق').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('manage_ticket').setLabel('إدارة').setEmoji('⚙️').setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('close_ticket').setLabel('اغلاق').setEmoji('🔒').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('manage_ticket').setLabel('إدارة').setEmoji('⚙️').setStyle(ButtonStyle.Secondary)
     );
 }
 
@@ -272,7 +273,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isButton() && interaction.customId === 'manage_ticket') {
-            if (!canManageTicket(interaction.member, interaction.channel.id)) return interaction.reply({ content: '❌ زر الإدارة متاح فقط للمسؤول المستلم للتذكرة.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ زر الإدارة متاح فقط لأعضاء الـ Staff.', ephemeral: true });
             return interaction.reply({ embeds: [new EmbedBuilder().setColor('#584702').setTitle('⚙️ إدارة التذكرة').setDescription('اختر الإجراء الذي تريد تنفيذه من القائمة التالية.')], components: [managementRow()], ephemeral: true });
         }
 
@@ -296,9 +297,18 @@ client.on('interactionCreate', async interaction => {
             saveTicketData();
             await updateTicketLog(interaction.channel.id);
 
+            const ownerMember = await interaction.guild.members.fetch(data.ownerId).catch(() => null);
+            const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
             const transcript = await createCustomTranscript(interaction.channel, {
-                ticketNumber: data.number, owner: `<@${data.ownerId}>`, type: data.typeName,
-                claimedBy: data.claimedBy ? `<@${data.claimedBy}>` : 'لم يتم الاستلام'
+                ticketNumber: data.number,
+                owner: ownerMember?.displayName || ownerMember?.user?.globalName || ownerMember?.user?.username || 'غير معروف',
+                type: data.typeName,
+                claimedBy: claimedMember?.displayName || claimedMember?.user?.globalName || claimedMember?.user?.username || 'لم يتم الاستلام',
+                openedBy: data.openedBy,
+                closedBy: data.closedBy,
+                deletedBy: data.deletedBy,
+                closeReason: data.closeReason,
+                guild: interaction.guild
             });
 
             const logChannel = await getLogChannel();
@@ -324,7 +334,7 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.isModalSubmit() && interaction.customId === 'rename_modal') {
             const data = ticketData[interaction.channel.id];
-            if (!canManageTicket(interaction.member, interaction.channel.id)) return interaction.reply({ content: '❌ هذه الخاصية للمسؤول المستلم فقط.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\u0600-\u06FF-_]/g, '-').slice(0, 80);
             await interaction.channel.setName(`${data.number}_${newName}`.slice(0, 100));
             data.currentName = interaction.channel.name; saveTicketData();
@@ -342,7 +352,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_management') {
-            if (!canManageTicket(interaction.member, interaction.channel.id)) return interaction.reply({ content: '❌ هذه القائمة للمسؤول المستلم فقط.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه القائمة متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const action = interaction.values[0];
             if (action === 'add_member' || action === 'remove_member' || action === 'transfer') {
                 const customId = action === 'add_member' ? 'add_member_select' : action === 'remove_member' ? 'remove_member_select' : 'transfer_member_select';
@@ -351,6 +361,8 @@ client.on('interactionCreate', async interaction => {
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#584702').setTitle(title).setDescription('اختر العضو من القائمة التالية.')], components: [new ActionRowBuilder().addComponents(select)] });
             }
             if (action === 'rename') {
+                const data = ticketData[interaction.channel.id];
+                if (!data?.claimedBy) return interaction.reply({ content: '❌ لا يمكن تغيير اسم التذكرة إلا بعد استلامها.', ephemeral: true });
                 const modal = new ModalBuilder().setCustomId('rename_modal').setTitle('✏️ تغيير اسم التذكرة');
                 modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_name').setLabel('الاسم الجديد').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)));
                 return interaction.showModal(modal);
@@ -363,8 +375,18 @@ client.on('interactionCreate', async interaction => {
             if (action === 'notify') {
                 const owner = getOwnerId(interaction.channel);
                 if (!owner) return interaction.reply({ content: '❌ لم يتم العثور على صاحب التذكرة.', ephemeral: true });
-                await interaction.channel.send({ content: `🔔 <@${owner}> **تنبيه:** المسؤول <@${interaction.user.id}> قام بتنبيهك داخل التذكرة.` });
-                return interaction.reply({ content: '✅ تم إرسال التنبيه داخل التذكرة.', ephemeral: true });
+                const ownerMember = await interaction.guild.members.fetch(owner).catch(() => null);
+                const ownerName = ownerMember?.displayName || ownerMember?.user?.globalName || ownerMember?.user?.username || 'صاحب التذكرة';
+                const notifyEmbed = new EmbedBuilder()
+                    .setColor('#ffd000')
+                    .setTitle('🔔 تنبيه صاحب التذكرة')
+                    .setDescription(`**${ownerName}**، لديك تنبيه جديد من فريق الدعم داخل التذكرة.`)
+                    .addFields({ name: '👮 بواسطة', value: interaction.member.displayName, inline: true })
+                    .setTimestamp()
+                    .setFooter({ text: 'Elsisy Community • Ticket System' });
+                // Mention stays outside the embed so Discord actually notifies the user.
+                await interaction.channel.send({ content: `<@${owner}>`, embeds: [notifyEmbed] });
+                return interaction.reply({ content: '✅ تم إرسال التنبيه كـ Embed مع منشن لصاحب التذكرة.', ephemeral: true });
             }
             if (action === 'status') {
                 const menu = new StringSelectMenuBuilder().setCustomId('status_select').setPlaceholder('اختر الحالة').addOptions(
@@ -377,7 +399,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isUserSelectMenu()) {
-            if (!canManageTicket(interaction.member, interaction.channel.id)) return interaction.reply({ content: '❌ هذه الخاصية للمسؤول المستلم فقط.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const targetId = interaction.values[0];
             const data = ticketData[interaction.channel.id];
             if (interaction.customId === 'add_member_select') {
@@ -400,7 +422,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isStringSelectMenu() && interaction.customId === 'move_ticket_select') {
-            if (!canManageTicket(interaction.member, interaction.channel.id)) return interaction.reply({ content: '❌ هذه الخاصية للمسؤول المستلم فقط.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const type = tickets[interaction.values[0]];
             if (!type?.category) return interaction.reply({ content: '❌ الـ Category غير مضبوط في الإعدادات.', ephemeral: true });
             await interaction.channel.setParent(type.category, { lockPermissions: false });
@@ -409,7 +431,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isStringSelectMenu() && interaction.customId === 'status_select') {
-            if (!canManageTicket(interaction.member, interaction.channel.id)) return interaction.reply({ content: '❌ هذه الخاصية للمسؤول المستلم فقط.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const data = ticketData[interaction.channel.id]; data.status = interaction.values[0]; saveTicketData(); await updateTicketLog(interaction.channel.id);
             return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('📊 تم تحديث الحالة').setDescription(`الحالة الجديدة: **${data.status}**`)], components: [managementRow()] });
         }
