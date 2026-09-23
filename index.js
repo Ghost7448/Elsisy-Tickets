@@ -376,7 +376,7 @@ client.on('interactionCreate', async interaction => {
             data.claimedBy = interaction.user.id;
             data.status = 'قيد المتابعة';
             const num = data.number;
-            // Keep ticket name unchanged when claiming.
+            await interaction.channel.setName(`${num}_claimed_${interaction.user.username}`.slice(0, 100));
             saveTicketData();
             await updateTicketLog(interaction.channel.id);
             return interaction.reply({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('✅ تم استلام التذكرة').setDescription(`تم استلام التذكرة بواسطة ${interaction.user}\n\nسيتم الرد عليك قريباً.`)] });
@@ -434,6 +434,9 @@ client.on('interactionCreate', async interaction => {
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ لا يمكنك إغلاق هذه التذكرة إلا إذا كنت من الـ Staff.', ephemeral: true });
             const reason = interaction.fields.getTextInputValue('close_reason');
             data.closedBy = interaction.user.id; data.closeReason = reason; data.status = 'مغلقة'; data.closedAt = Date.now();
+            const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
+            const claimedName = claimedMember?.user?.username || claimedMember?.displayName || 'Unknown';
+            await interaction.channel.setName(`Closed-Climed-${data.number}-${claimedName}`.slice(0, 100));
             await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
             saveTicketData();
             await updateTicketLog(interaction.channel.id);
@@ -531,8 +534,19 @@ client.on('interactionCreate', async interaction => {
             if (interaction.customId === 'transfer_member_select') {
                 const target = await interaction.guild.members.fetch(targetId).catch(() => null);
                 if (!target || !isStaff(target)) return interaction.reply({ content: '❌ يجب اختيار مسؤول لديه أحد رولات الـ Staff المحددة.', ephemeral: true });
+                const oldClaimedId = data.claimedBy;
                 data.claimedBy = targetId; data.status = 'قيد المتابعة'; saveTicketData();
-                // Keep ticket name unchanged when transferring.
+                await interaction.channel.setName(`${data.number}_claimed_${target.user.username}`.slice(0, 100));
+                await sendTicketActionEmbed(interaction.channel, {
+                    title: '👤 تم نقل المسؤول',
+                    description: 'تم تغيير مسؤول التذكرة بنجاح.',
+                    color: '#5865f2',
+                    fields: [
+                        { name: '👤 المسؤول الجديد', value: `<@${targetId}>`, inline: true },
+                        { name: '👤 المسؤول القديم', value: oldClaimedId ? `<@${oldClaimedId}>` : 'لم يكن هناك مسؤول', inline: true },
+                        { name: '👮 بواسطة', value: `${interaction.user}`, inline: true }
+                    ]
+                });
                 await updateTicketLog(interaction.channel.id);
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('👤 تم نقل المسؤول').setDescription(`تم تسليم التذكرة إلى <@${targetId}>.`)], components: [managementRow()] });
             }
