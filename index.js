@@ -279,7 +279,7 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.isButton() && interaction.customId === 'close_ticket') {
             const data = ticketData[interaction.channel.id];
-            if (!data?.claimedBy || data.claimedBy !== interaction.user.id) return interaction.reply({ content: '❌ لا يمكنك إغلاق التذكرة إلا إذا كنت المسؤول المستلم لها.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ زر الإغلاق متاح فقط لأعضاء الـ Staff.', ephemeral: true });
             const modal = new ModalBuilder().setCustomId('close_ticket_modal').setTitle('🔒 إغلاق التذكرة');
             const reason = new TextInputBuilder().setCustomId('close_reason').setLabel('سبب إغلاق التذكرة').setPlaceholder('اكتب سبب إغلاق التذكرة هنا...').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(3).setMaxLength(500);
             modal.addComponents(new ActionRowBuilder().addComponents(reason));
@@ -312,7 +312,7 @@ client.on('interactionCreate', async interaction => {
             });
 
             const logChannel = await getLogChannel();
-            if (logChannel?.isTextBased()) await logChannel.send({ content: `📄 **Transcript التذكرة #${data.number}**`, files: [transcript] });
+            if (logChannel?.isTextBased()) await logChannel.send({ content: `📄 **Transcript التذكرة ${data.number}**`, files: [transcript] });
 
             await interaction.editReply({ content: '✅ تم حفظ الـ Transcript وسيتم حذف التذكرة خلال 5 ثواني.' });
             setTimeout(async () => { try { await interaction.channel.delete(); } catch {} }, 5000);
@@ -321,12 +321,14 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.isModalSubmit() && interaction.customId === 'close_ticket_modal') {
             const data = ticketData[interaction.channel.id];
-            if (!data?.claimedBy || data.claimedBy !== interaction.user.id) return interaction.reply({ content: '❌ لا يمكنك إغلاق هذه التذكرة.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ لا يمكنك إغلاق هذه التذكرة إلا إذا كنت من الـ Staff.', ephemeral: true });
             const reason = interaction.fields.getTextInputValue('close_reason');
             data.closedBy = interaction.user.id; data.closeReason = reason; data.status = 'مغلقة'; data.closedAt = Date.now();
             await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
             saveTicketData();
-            await interaction.channel.setName(`closed-${data.number}`.slice(0, 100));
+            const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
+            const claimedName = claimedMember?.user?.username || claimedMember?.displayName || 'unclaimed';
+            await interaction.channel.setName(`Closed-Climed-${data.number}-${claimedName}`.slice(0, 100));
             await updateTicketLog(interaction.channel.id);
             const closeEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('🔒 تم إغلاق التذكرة').setDescription(`تم إغلاق التذكرة بواسطة ${interaction.user}\n\n📝 **سبب الإغلاق:**\n> ${reason}`).setTimestamp();
             return interaction.reply({ embeds: [closeEmbed], components: [ticketButtons(true)] });

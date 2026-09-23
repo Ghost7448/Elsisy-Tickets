@@ -162,7 +162,7 @@ async function createCustomTranscript(channel, info = {}) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Ticket #${escapeHTML(info.ticketNumber || '0000')} • Transcript</title>
+<title>Ticket ${escapeHTML(info.ticketNumber || '0000')} • Transcript</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#08090b;color:#eee;font-family:Arial,"Segoe UI",Tahoma,sans-serif;min-height:100vh}
@@ -186,7 +186,7 @@ body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle 
 <section class="hero">
     <div class="brand"><div class="logo">🎟️</div><div><div class="title">Elsisy Community</div><div class="sub">Ticket Transcript • سجل كامل للتذكرة</div></div></div>
     <div class="cards">
-        <div class="card"><div class="label">🎟️ رقم التذكرة</div><div class="value">#${escapeHTML(info.ticketNumber || '0000')}</div></div>
+        <div class="card"><div class="label">🎟️ رقم التذكرة</div><div class="value">${escapeHTML(info.ticketNumber || '0000')}</div></div>
         <div class="card"><div class="label">👤 صاحب التذكرة</div><div class="value">${escapeHTML(ownerName)}</div></div>
         <div class="card"><div class="label">📁 القسم</div><div class="value">${escapeHTML(info.type || 'غير معروف')}</div></div>
         <div class="card"><div class="label">📌 المسؤول</div><div class="value">${escapeHTML(claimedName)}</div></div>
