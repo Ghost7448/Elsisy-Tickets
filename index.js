@@ -368,10 +368,15 @@ client.on('interactionCreate', async interaction => {
             data.claimedBy = interaction.user.id;
             data.status = 'قيد المتابعة';
             const num = data.number;
-            await interaction.channel.setName(`${num}_claimed_${interaction.user.username}`.slice(0, 100));
+            await interaction.deferReply({ ephemeral: true });
+            try {
+                await interaction.channel.setName(`${num}_claimed_${interaction.user.username}`.slice(0, 100));
+            } catch (e) {
+                console.error('Claim rename error:', e);
+            }
             saveTicketData();
             await updateTicketLog(interaction.channel.id);
-            return interaction.reply({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('✅ تم استلام التذكرة').setDescription(`تم استلام التذكرة بواسطة ${interaction.user}\n\nسيتم الرد عليك قريباً.`)] });
+            return interaction.editReply({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('✅ تم استلام التذكرة').setDescription(`تم استلام التذكرة بواسطة ${interaction.user}\n\nسيتم الرد عليك قريباً.`)] });
         }
 
         if (interaction.isButton() && interaction.customId === 'manage_ticket') {
@@ -426,30 +431,38 @@ client.on('interactionCreate', async interaction => {
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ لا يمكنك إغلاق هذه التذكرة إلا إذا كنت من الـ Staff.', ephemeral: true });
             const reason = interaction.fields.getTextInputValue('close_reason');
             data.closedBy = interaction.user.id; data.closeReason = reason; data.status = 'مغلقة'; data.closedAt = Date.now();
-            await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
+            await interaction.deferReply({ ephemeral: true });
+            try {
+                await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
+            } catch (e) {
+                console.error('Close permission error:', e);
+            }
             saveTicketData();
             const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
             const claimedName = claimedMember?.user?.username || claimedMember?.displayName || 'unclaimed';
-            await interaction.channel.setName(`Closed-Climed-${data.number}-${claimedName}`.slice(0, 100));
+            try {
+                await interaction.channel.setName(`Closed-Climed-${data.number}-${claimedName}`.slice(0, 100));
+            } catch (e) {
+                console.error('Close rename error:', e);
+            }
             await updateTicketLog(interaction.channel.id);
             const closeEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('🔒 تم إغلاق التذكرة').setDescription(`تم إغلاق التذكرة بواسطة ${interaction.user}\n\n📝 **سبب الإغلاق:**\n> ${reason}`).setTimestamp();
-            return interaction.reply({ embeds: [closeEmbed], components: [ticketButtons(true)] });
+            return interaction.editReply({ embeds: [closeEmbed], components: [ticketButtons(true)] });
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'rename_modal') {
             const data = ticketData[interaction.channel.id];
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\u0600-\u06FF-_]/g, '-').slice(0, 80);
-            if (!newName) return interaction.reply({ content: '❌ اكتب اسمًا صالحًا للتذكرة.', ephemeral: true });
-
             await interaction.deferReply({ ephemeral: true });
+            const finalName = `${data.number}_${newName}`.slice(0, 100);
             try {
-                await interaction.channel.setName(`${data.number}_${newName}`.slice(0, 100));
-                data.currentName = interaction.channel.name;
+                await interaction.channel.setName(finalName);
+                data.currentName = finalName;
                 saveTicketData();
-                return interaction.editReply({ content: `✅ تم تغيير اسم التذكرة إلى \`${interaction.channel.name}\`` });
-            } catch (error) {
-                console.error('Rename error:', error);
+                return interaction.editReply({ content: `✅ تم تغيير اسم التذكرة إلى \`${finalName}\`` });
+            } catch (e) {
+                console.error('Manual rename error:', e);
                 return interaction.editReply({ content: '❌ لم أستطع تغيير اسم التذكرة. تأكد أن البوت لديه صلاحية **Manage Channels**.' });
             }
         }
@@ -527,9 +540,14 @@ client.on('interactionCreate', async interaction => {
             if (interaction.customId === 'transfer_member_select') {
                 const target = await interaction.guild.members.fetch(targetId).catch(() => null);
                 if (!target || !isStaff(target)) return interaction.reply({ content: '❌ يجب اختيار مسؤول لديه أحد رولات الـ Staff المحددة.', ephemeral: true });
+                const oldClaimedId = data.claimedBy;
                 data.claimedBy = targetId; data.status = 'قيد المتابعة'; saveTicketData();
                 await updateTicketLog(interaction.channel.id);
-                return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('👤 تم نقل المسؤول').setDescription(`تم تسليم التذكرة إلى <@${targetId}>.`)], components: [managementRow()] });
+                return interaction.update({ embeds: [new EmbedBuilder().setColor('#5865f2').setTitle('👤 تم تغيير المسؤول').setDescription('تم تغيير مسؤول التذكرة بنجاح.').addFields(
+                    { name: '👤 المسؤول القديم', value: oldClaimedId ? `<@${oldClaimedId}>` : 'لم يكن هناك مسؤول', inline: true },
+                    { name: '👤 المسؤول الجديد', value: `<@${targetId}>`, inline: true },
+                    { name: '👮 بواسطة', value: `${interaction.user}`, inline: true }
+                )], components: [managementRow()] });
             }
         }
 
