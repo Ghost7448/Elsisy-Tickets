@@ -391,7 +391,7 @@ client.on('interactionCreate', async interaction => {
             await channel.send({ content: `<@&${data.role}> | ${interaction.user}`, embeds: [ticketEmbed], components: [ticketButtons()] });
             await updateTicketLog(channel.id);
             await sendActionLog(channel.id, 'تم إنشاء التذكرة', interaction.user, [
-                { name: '👤 صاحب التذكرة', value: `<@${data.ownerId}>`, inline: true }
+                { name: '👤 صاحب التذكرة', value: `<@${ticketData[channel.id].ownerId}>`, inline: true }
             ]);
             return interaction.editReply({ content: `✅ تم إنشاء التذكرة ${channel}` });
         }
@@ -538,6 +538,9 @@ client.on('interactionCreate', async interaction => {
                 data.deletedAt = Date.now();
                 saveTicketData();
                 await updateTicketLog(interaction.channel.id);
+                await sendActionLog(interaction.channel.id, 'تم حذف التذكرة', interaction.user, [
+                    { name: '🗑️ الحالة وقت الحذف', value: data.status || 'غير معروف', inline: true }
+                ]);
 
                 const ownerMember = await interaction.guild.members.fetch(data.ownerId).catch(() => null);
                 const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
@@ -592,6 +595,16 @@ client.on('interactionCreate', async interaction => {
             const data = ticketData[interaction.channel.id];
             if (interaction.customId === 'add_member_select') {
                 await interaction.channel.permissionOverwrites.edit(targetId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+                const addedMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+                const addedName = addedMember?.displayName || addedMember?.user?.globalName || addedMember?.user?.username || `<@${targetId}>`;
+                const addedEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('➕ تم إضافة عضو للتذكرة')
+                    .setDescription(`تمت إضافة ${addedMember ? `<@${targetId}>` : addedName} إلى التذكرة بواسطة ${interaction.user}.`)
+                    .addFields({ name: '👤 العضو المضاف', value: `<@${targetId}>`, inline: true })
+                    .setTimestamp()
+                    .setFooter({ text: 'Elsisy Community • Ticket System' });
+                await interaction.channel.send({ embeds: [addedEmbed] });
                 await sendActionLog(interaction.channel.id, 'تم إضافة عضو', interaction.user, [
                     { name: '👤 العضو', value: `<@${targetId}>`, inline: true }
                 ]);
@@ -611,8 +624,20 @@ client.on('interactionCreate', async interaction => {
                 const previousClaimedBy = data.claimedBy;
                 data.claimedBy = targetId; data.status = 'قيد المتابعة'; saveTicketData();
                 await updateTicketLog(interaction.channel.id);
+                const previousResponsible = previousClaimedBy ? `<@${previousClaimedBy}>` : 'لم يكن هناك مسؤول';
+                const transferEmbed = new EmbedBuilder()
+                    .setColor('#00aaff')
+                    .setTitle('👤 تم تغيير مسؤول التذكرة')
+                    .setDescription(`تم تغيير مسؤول التذكرة بواسطة ${interaction.user}.`)
+                    .addFields(
+                        { name: '👤 المسؤول السابق', value: previousResponsible, inline: true },
+                        { name: '👤 المسؤول الجديد', value: `<@${targetId}>`, inline: true }
+                    )
+                    .setTimestamp()
+                    .setFooter({ text: 'Elsisy Community • Ticket System' });
+                await interaction.channel.send({ embeds: [transferEmbed] });
                 await sendActionLog(interaction.channel.id, 'تم نقل مسؤول التذكرة', interaction.user, [
-                    { name: '👤 المسؤول السابق', value: previousClaimedBy ? `<@${previousClaimedBy}>` : 'لم يكن هناك مسؤول', inline: true },
+                    { name: '👤 المسؤول السابق', value: previousResponsible, inline: true },
                     { name: '👤 المسؤول الجديد', value: `<@${targetId}>`, inline: true }
                 ]);
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('👤 تم نقل المسؤول').setDescription(`تم تسليم التذكرة إلى <@${targetId}>.`)], components: [managementRow()] });
