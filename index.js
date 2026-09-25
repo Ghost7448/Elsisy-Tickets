@@ -141,8 +141,40 @@ async function updateTicketLog(channelId) {
     return message;
 }
 
-async function sendActionLog(channelId) {
-    return updateTicketLog(channelId);
+async function getActionLogChannel() {
+    const guildId = process.env.LOG_GUILD_ID;
+    const channelId = process.env.ACTION_LOG_CHANNEL_ID;
+    if (!guildId || !channelId) return null;
+    try {
+        const guild = await client.guilds.fetch(guildId);
+        return await guild.channels.fetch(channelId);
+    } catch (e) {
+        console.error('Action log channel error:', e.message);
+        return null;
+    }
+}
+
+async function sendActionLog(channelId, action, actor, extraFields = []) {
+    const data = ticketData[channelId];
+    if (!data) return null;
+    const logChannel = await getActionLogChannel();
+    if (!logChannel?.isTextBased()) return null;
+
+    const fields = [
+        { name: '🎟️ رقم التذكرة', value: `\`${data.number || '0000'}\``, inline: true },
+        { name: '👮 بواسطة', value: actor?.id ? `<@${actor.id}>` : 'غير معروف', inline: true },
+        { name: '📁 القسم', value: data.typeName || 'غير معروف', inline: true },
+        ...extraFields
+    ];
+
+    const embed = new EmbedBuilder()
+        .setColor('#584702')
+        .setTitle(`📋 ${action}`)
+        .addFields(fields)
+        .setTimestamp()
+        .setFooter({ text: 'Elsisy Community • Ticket Actions' });
+
+    return logChannel.send({ embeds: [embed] });
 }
 
 function managementRow(disabled = false) {
@@ -157,7 +189,8 @@ function managementRow(disabled = false) {
             { label: 'نقل التذكرة', description: 'نقل التذكرة إلى قسم آخر', value: 'move', emoji: '📂' },
             { label: 'إرسال تنبيه', description: 'تنبيه صاحب التذكرة داخل القناة', value: 'notify', emoji: '🔔' },
             { label: 'تغيير حالة التذكرة', description: 'تحديث حالة التذكرة', value: 'status', emoji: '📊' },
-            { label: 'نقل المسؤول', description: 'تسليم التذكرة لمسؤول آخر', value: 'transfer', emoji: '👤' }
+            { label: 'نقل المسؤول', description: 'تسليم التذكرة لمسؤول آخر', value: 'transfer', emoji: '👤' },
+            { label: 'حذف التذكرة', description: 'حذف التذكرة', value: 'delete_ticket', emoji: '🗑️' }
         );
     return new ActionRowBuilder().addComponents(menu);
 }
@@ -357,6 +390,9 @@ client.on('interactionCreate', async interaction => {
 
             await channel.send({ content: `<@&${data.role}> | ${interaction.user}`, embeds: [ticketEmbed], components: [ticketButtons()] });
             await updateTicketLog(channel.id);
+            await sendActionLog(channel.id, 'تم إنشاء التذكرة', interaction.user, [
+                { name: '👤 صاحب التذكرة', value: `<@${data.ownerId}>`, inline: true }
+            ]);
             return interaction.editReply({ content: `✅ تم إنشاء التذكرة ${channel}` });
         }
 
@@ -371,6 +407,9 @@ client.on('interactionCreate', async interaction => {
             await interaction.channel.setName(`${num}_claimed_${interaction.user.username}`.slice(0, 100));
             saveTicketData();
             await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم استلام التذكرة', interaction.user, [
+                { name: '👤 المسؤول الحالي', value: `<@${interaction.user.id}>`, inline: true }
+            ]);
             return interaction.reply({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('✅ تم استلام التذكرة').setDescription(`تم استلام التذكرة بواسطة ${interaction.user}\n\nسيتم الرد عليك قريباً.`)] });
         }
 
@@ -391,11 +430,15 @@ client.on('interactionCreate', async interaction => {
         if (interaction.isButton() && interaction.customId === 'delete_ticket') {
             const data = ticketData[interaction.channel.id];
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ ليس لديك صلاحية حذف التذكرة.', ephemeral: true });
+
             await interaction.deferReply({ ephemeral: true });
             data.deletedBy = interaction.user.id;
             data.deletedAt = Date.now();
             saveTicketData();
             await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم حذف التذكرة', interaction.user, [
+                { name: '🗑️ الحالة وقت الحذف', value: data.status || 'غير معروف', inline: true }
+            ]);
 
             const ownerMember = await interaction.guild.members.fetch(data.ownerId).catch(() => null);
             const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
@@ -430,6 +473,9 @@ client.on('interactionCreate', async interaction => {
             const claimedName = claimedMember?.user?.username || claimedMember?.displayName || 'unclaimed';
             await interaction.channel.setName(`Closed-Climed-${data.number}-${claimedName}`.slice(0, 100));
             await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم قفل التذكرة', interaction.user, [
+                { name: '📝 السبب', value: reason.slice(0, 1024), inline: false }
+            ]);
             const closeEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('🔒 تم إغلاق التذكرة').setDescription(`تم إغلاق التذكرة بواسطة ${interaction.user}\n\n📝 **سبب الإغلاق:**\n> ${reason}`).setTimestamp();
             return interaction.reply({ embeds: [closeEmbed], components: [ticketButtons(true)] });
         }
@@ -438,8 +484,13 @@ client.on('interactionCreate', async interaction => {
             const data = ticketData[interaction.channel.id];
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\u0600-\u06FF-_]/g, '-').slice(0, 80);
+            const oldName = interaction.channel.name;
             await interaction.channel.setName(`${data.number}_${newName}`.slice(0, 100));
             data.currentName = interaction.channel.name; saveTicketData();
+            await sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
+                { name: '📝 الاسم السابق', value: `\`${oldName}\``, inline: true },
+                { name: '📝 الاسم الجديد', value: `\`${interaction.channel.name}\``, inline: true }
+            ]);
             return interaction.reply({ content: `✅ تم تغيير اسم التذكرة إلى \`${interaction.channel.name}\``, ephemeral: true });
         }
 
@@ -449,7 +500,12 @@ client.on('interactionCreate', async interaction => {
             const allowed = ['مفتوحة', 'قيد المتابعة', 'معلقة', 'مغلقة'];
             if (!allowed.includes(status)) return interaction.reply({ content: `❌ الحالة يجب أن تكون واحدة من: ${allowed.join('، ')}`, ephemeral: true });
             if (status === 'مغلقة') return interaction.reply({ content: '❌ استخدم زر إغلاق التذكرة لإغلاقها وتسجيل السبب.', ephemeral: true });
+            const oldStatus = data.status;
             data.status = status; saveTicketData(); await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم تغيير حالة التذكرة', interaction.user, [
+                { name: '📊 الحالة السابقة', value: oldStatus || 'غير معروف', inline: true },
+                { name: '📊 الحالة الجديدة', value: status, inline: true }
+            ]);
             return interaction.reply({ content: `✅ تم تحديث حالة التذكرة إلى **${status}**.`, ephemeral: true });
         }
 
@@ -474,6 +530,34 @@ client.on('interactionCreate', async interaction => {
                 Object.entries(tickets).forEach(([key, value]) => menu.addOptions({ label: value.name, value: key, emoji: value.emoji }));
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#584702').setTitle('📂 نقل التذكرة').setDescription('اختر القسم الذي تريد نقل التذكرة إليه.')], components: [new ActionRowBuilder().addComponents(menu)] });
             }
+            if (action === 'delete_ticket') {
+                const data = ticketData[interaction.channel.id];
+                if (!data) return interaction.reply({ content: '❌ بيانات التذكرة غير موجودة.', ephemeral: true });
+                await interaction.deferReply({ ephemeral: true });
+                data.deletedBy = interaction.user.id;
+                data.deletedAt = Date.now();
+                saveTicketData();
+                await updateTicketLog(interaction.channel.id);
+
+                const ownerMember = await interaction.guild.members.fetch(data.ownerId).catch(() => null);
+                const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
+                const transcript = await createCustomTranscript(interaction.channel, {
+                    ticketNumber: data.number,
+                    owner: ownerMember?.displayName || ownerMember?.user?.globalName || ownerMember?.user?.username || 'غير معروف',
+                    type: data.typeName,
+                    claimedBy: claimedMember?.displayName || claimedMember?.user?.globalName || claimedMember?.user?.username || 'لم يتم الاستلام',
+                    openedBy: data.openedBy,
+                    closedBy: data.closedBy,
+                    deletedBy: data.deletedBy,
+                    closeReason: data.closeReason,
+                    guild: interaction.guild
+                });
+                const logChannel = await getLogChannel();
+                if (logChannel?.isTextBased()) await logChannel.send({ content: `📄 **Transcript التذكرة ${data.number}**`, files: [transcript] });
+                await interaction.editReply({ content: '✅ تم حفظ الـ Transcript وسيتم حذف التذكرة خلال 5 ثواني.' });
+                setTimeout(async () => { try { await interaction.channel.delete(); } catch {} }, 5000);
+                return;
+            }
             if (action === 'notify') {
                 const owner = getOwnerId(interaction.channel);
                 if (!owner) return interaction.reply({ content: '❌ لم يتم العثور على صاحب التذكرة.', ephemeral: true });
@@ -483,11 +567,13 @@ client.on('interactionCreate', async interaction => {
                     .setColor('#ffd000')
                     .setTitle('🔔 تنبيه صاحب التذكرة')
                     .setDescription(`**${ownerName}**، لديك تنبيه جديد من فريق الدعم داخل التذكرة.`)
-                    .addFields({ name: '👮 بواسطة', value: interaction.member.displayName, inline: true })
                     .setTimestamp()
                     .setFooter({ text: 'Elsisy Community • Ticket System' });
                 // Mention stays outside the embed so Discord actually notifies the user.
                 await interaction.channel.send({ content: `<@${owner}>`, embeds: [notifyEmbed] });
+                await sendActionLog(interaction.channel.id, 'تم إرسال تنبيه', interaction.user, [
+                    { name: '🔔 المستلم', value: `<@${owner}>`, inline: true }
+                ]);
                 return interaction.reply({ content: '✅ تم إرسال التنبيه كـ Embed مع منشن لصاحب التذكرة.', ephemeral: true });
             }
             if (action === 'status') {
@@ -506,18 +592,29 @@ client.on('interactionCreate', async interaction => {
             const data = ticketData[interaction.channel.id];
             if (interaction.customId === 'add_member_select') {
                 await interaction.channel.permissionOverwrites.edit(targetId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+                await sendActionLog(interaction.channel.id, 'تم إضافة عضو', interaction.user, [
+                    { name: '👤 العضو', value: `<@${targetId}>`, inline: true }
+                ]);
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('➕ تمت إضافة العضو').setDescription(`تم منح <@${targetId}> صلاحية الدخول للتذكرة.`)], components: [managementRow()] });
             }
             if (interaction.customId === 'remove_member_select') {
                 if (targetId === data.ownerId) return interaction.reply({ content: '❌ لا يمكن إزالة صاحب التذكرة.', ephemeral: true });
                 await interaction.channel.permissionOverwrites.delete(targetId).catch(() => {});
+                await sendActionLog(interaction.channel.id, 'تم حذف عضو', interaction.user, [
+                    { name: '👤 العضو', value: `<@${targetId}>`, inline: true }
+                ]);
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('➖ تمت إزالة العضو').setDescription(`تم إزالة <@${targetId}> من التذكرة.`)], components: [managementRow()] });
             }
             if (interaction.customId === 'transfer_member_select') {
                 const target = await interaction.guild.members.fetch(targetId).catch(() => null);
                 if (!target || !isStaff(target)) return interaction.reply({ content: '❌ يجب اختيار مسؤول لديه أحد رولات الـ Staff المحددة.', ephemeral: true });
+                const previousClaimedBy = data.claimedBy;
                 data.claimedBy = targetId; data.status = 'قيد المتابعة'; saveTicketData();
                 await updateTicketLog(interaction.channel.id);
+                await sendActionLog(interaction.channel.id, 'تم نقل مسؤول التذكرة', interaction.user, [
+                    { name: '👤 المسؤول السابق', value: previousClaimedBy ? `<@${previousClaimedBy}>` : 'لم يكن هناك مسؤول', inline: true },
+                    { name: '👤 المسؤول الجديد', value: `<@${targetId}>`, inline: true }
+                ]);
                 return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('👤 تم نقل المسؤول').setDescription(`تم تسليم التذكرة إلى <@${targetId}>.`)], components: [managementRow()] });
             }
         }
@@ -527,13 +624,25 @@ client.on('interactionCreate', async interaction => {
             const type = tickets[interaction.values[0]];
             if (!type?.category) return interaction.reply({ content: '❌ الـ Category غير مضبوط في الإعدادات.', ephemeral: true });
             await interaction.channel.setParent(type.category, { lockPermissions: false });
-            const data = ticketData[interaction.channel.id]; data.type = interaction.values[0]; data.typeName = type.name; saveTicketData(); await updateTicketLog(interaction.channel.id);
+            const data = ticketData[interaction.channel.id];
+            const oldTypeName = data.typeName;
+            data.type = interaction.values[0]; data.typeName = type.name; saveTicketData(); await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم نقل التذكرة لقسم آخر', interaction.user, [
+                { name: '📂 القسم السابق', value: oldTypeName || 'غير معروف', inline: true },
+                { name: '📂 القسم الجديد', value: type.name, inline: true }
+            ]);
             return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('📂 تم نقل التذكرة').setDescription(`تم نقل التذكرة إلى قسم **${type.name}**.`)], components: [managementRow()] });
         }
 
         if (interaction.isStringSelectMenu() && interaction.customId === 'status_select') {
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
-            const data = ticketData[interaction.channel.id]; data.status = interaction.values[0]; saveTicketData(); await updateTicketLog(interaction.channel.id);
+            const data = ticketData[interaction.channel.id];
+            const oldStatus = data.status;
+            data.status = interaction.values[0]; saveTicketData(); await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم تغيير حالة التذكرة', interaction.user, [
+                { name: '📊 الحالة السابقة', value: oldStatus || 'غير معروف', inline: true },
+                { name: '📊 الحالة الجديدة', value: data.status, inline: true }
+            ]);
             return interaction.update({ embeds: [new EmbedBuilder().setColor('#00ff00').setTitle('📊 تم تحديث الحالة').setDescription(`الحالة الجديدة: **${data.status}**`)], components: [managementRow()] });
         }
     } catch (error) {
