@@ -25,8 +25,11 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-const counterFile = './ticket-counter.json';
-const dataFile = './ticket-data.json';
+// Railway: attach a Persistent Volume mounted at /data and set DATA_DIR=/data.
+const dataDirectory = process.env.DATA_DIR || '.';
+fs.mkdirSync(dataDirectory, { recursive: true });
+const counterFile = require('path').join(dataDirectory, 'ticket-counter.json');
+const dataFile = require('path').join(dataDirectory, 'ticket-data.json');
 const banner = 'https://i.postimg.cc/XNdm9Wvw/file-00000000fac881f4bf8abe24be69b5d2.png';
 
 const tickets = {
@@ -58,6 +61,57 @@ function getTicketNumber() {
     const number = Number(data.counter) || 1;
     writeJSON(counterFile, { counter: number + 1 });
     return number;
+}
+
+// Recover basic metadata for tickets created before storage was configured.
+function recoverTicketData(channel) {
+    if (!channel?.id || !channel?.guild) return null;
+    if (ticketData[channel.id]) return ticketData[channel.id];
+
+    const nameMatch = channel.name.match(/(?:ticket_|Closed-Climed-|ticket-|^)(\\d+)/i)
+        || channel.name.match(/(\\d+)/);
+    const number = nameMatch?.[1] || '0000';
+    const parentId = channel.parentId;
+    const typeEntry = Object.entries(tickets).find(([, type]) => type.category && type.category === parentId);
+    const ownerOverwrite = channel.permissionOverwrites.cache.find(overwrite =>
+        overwrite.type === 1 &&
+        overwrite.id !== client.user?.id &&
+        overwrite.allow.has(PermissionsBitField.Flags.ViewChannel) &&
+        overwrite.allow.has(PermissionsBitField.Flags.SendMessages)
+    );
+    const closed = /^Closed-/i.test(channel.name);
+
+    const data = {
+        number: String(number),
+        type: typeEntry?.[0] || 'unknown',
+        typeName: typeEntry?.[1]?.name || 'تذكرة قديمة',
+        ownerId: ownerOverwrite?.id || null,
+        openedBy: ownerOverwrite?.id || null,
+        claimedBy: null,
+        status: closed ? 'مغلقة' : 'مفتوحة',
+        channelMention: `<#${channel.id}>`,
+        createdAt: channel.createdTimestamp || Date.now(),
+        recovered: true
+    };
+    ticketData[channel.id] = data;
+    saveTicketData();
+    return data;
+}
+
+async function syncTicketCounter() {
+    let maxNumber = 0;
+    for (const guild of client.guilds.cache.values()) {
+        const channels = await guild.channels.fetch().catch(() => null);
+        if (!channels) continue;
+        for (const channel of channels.values()) {
+            if (!channel?.isTextBased?.()) continue;
+            const match = channel.name.match(/(?:ticket_|Closed-Climed-|ticket-|^)(\\d+)/i)
+                || channel.name.match(/(\\d+)/);
+            if (match) maxNumber = Math.max(maxNumber, Number(match[1]) || 0);
+        }
+    }
+    const current = Number(readJSON(counterFile, { counter: 1 }).counter) || 1;
+    if (current <= maxNumber) writeJSON(counterFile, { counter: maxNumber + 1 });
 }
 
 function isStaff(member) {
@@ -427,8 +481,9 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isButton() && interaction.customId === 'delete_ticket') {
-            const data = ticketData[interaction.channel.id];
+            const data = recoverTicketData(interaction.channel);
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ ليس لديك صلاحية حذف التذكرة.', ephemeral: true });
+            if (!data) return interaction.reply({ content: '❌ تعذر استعادة بيانات التذكرة القديمة.', ephemeral: true });
 
             await interaction.deferReply({ ephemeral: true });
             data.deletedBy = interaction.user.id;
@@ -462,7 +517,8 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'close_ticket_modal') {
-            const data = ticketData[interaction.channel.id];
+            const data = recoverTicketData(interaction.channel);
+            if (!data) return interaction.reply({ content: '❌ تعذر استعادة بيانات التذكرة القديمة.', ephemeral: true });
             const reason = interaction.fields.getTextInputValue('close_reason');
             data.closedBy = interaction.user.id; data.closeReason = reason; data.status = 'مغلقة'; data.closedAt = Date.now();
             await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
@@ -675,6 +731,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.once('ready', async () => {
+    await syncTicketCounter().catch(error => console.error('Ticket counter sync error:', error));
     const commands = [new SlashCommandBuilder().setName('ticket').setDescription('ارسال بانل التذاكر')];
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try {
