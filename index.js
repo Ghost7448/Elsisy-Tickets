@@ -420,7 +420,6 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.isButton() && interaction.customId === 'close_ticket') {
             const data = ticketData[interaction.channel.id];
-            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ زر الإغلاق متاح فقط لأعضاء الـ Staff.', ephemeral: true });
             const modal = new ModalBuilder().setCustomId('close_ticket_modal').setTitle('🔒 إغلاق التذكرة');
             const reason = new TextInputBuilder().setCustomId('close_reason').setLabel('سبب إغلاق التذكرة').setPlaceholder('اكتب سبب إغلاق التذكرة هنا...').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(3).setMaxLength(500);
             modal.addComponents(new ActionRowBuilder().addComponents(reason));
@@ -464,7 +463,6 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.isModalSubmit() && interaction.customId === 'close_ticket_modal') {
             const data = ticketData[interaction.channel.id];
-            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ لا يمكنك إغلاق هذه التذكرة إلا إذا كنت من الـ Staff.', ephemeral: true });
             const reason = interaction.fields.getTextInputValue('close_reason');
             data.closedBy = interaction.user.id; data.closeReason = reason; data.status = 'مغلقة'; data.closedAt = Date.now();
             await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
