@@ -105,8 +105,8 @@ async function syncTicketCounter() {
         if (!channels) continue;
         for (const channel of channels.values()) {
             if (!channel?.isTextBased?.()) continue;
-            const match = channel.name.match(/(?:ticket_|Closed-Climed-|ticket-|^)(\\d+)/i)
-                || channel.name.match(/(\\d+)/);
+            const match = channel.name.match(/^(?:ticket_|Closed-Climed-|ticket-)(\\d+)/i)
+                || channel.name.match(/^(\\d+)[_-]/);
             if (match) maxNumber = Math.max(maxNumber, Number(match[1]) || 0);
         }
     }
@@ -494,7 +494,7 @@ client.on('interactionCreate', async interaction => {
                 { name: '🗑️ الحالة وقت الحذف', value: data.status || 'غير معروف', inline: true }
             ]);
 
-            const ownerMember = await interaction.guild.members.fetch(data.ownerId).catch(() => null);
+            const ownerMember = data.ownerId ? await interaction.guild.members.fetch(data.ownerId).catch(() => null) : null;
             const claimedMember = data.claimedBy ? await interaction.guild.members.fetch(data.claimedBy).catch(() => null) : null;
             const transcript = await createCustomTranscript(interaction.channel, {
                 ticketNumber: data.number,
@@ -519,6 +519,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.isModalSubmit() && interaction.customId === 'close_ticket_modal') {
             const data = recoverTicketData(interaction.channel);
             if (!data) return interaction.reply({ content: '❌ تعذر استعادة بيانات التذكرة القديمة.', ephemeral: true });
+            if (!data.ownerId) return interaction.reply({ content: '❌ لم أتمكن من تحديد صاحب التذكرة القديمة من صلاحيات القناة؛ يمكن لفريق الإدارة مراجعتها يدويًا.', ephemeral: true });
             const reason = interaction.fields.getTextInputValue('close_reason');
             data.closedBy = interaction.user.id; data.closeReason = reason; data.status = 'مغلقة'; data.closedAt = Date.now();
             await interaction.channel.permissionOverwrites.edit(data.ownerId, { SendMessages: false });
