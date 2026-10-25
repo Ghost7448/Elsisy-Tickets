@@ -68,8 +68,8 @@ function recoverTicketData(channel) {
     if (!channel?.id || !channel?.guild) return null;
     if (ticketData[channel.id]) return ticketData[channel.id];
 
-    const nameMatch = channel.name.match(/(?:ticket_|Closed-Climed-|ticket-|^)(\\d+)/i)
-        || channel.name.match(/(\\d+)/);
+    const nameMatch = channel.name.match(/(?:ticket_|Closed-Climed-|ticket-|^)(\d+)/i)
+        || channel.name.match(/(\d+)/);
     const number = nameMatch?.[1] || '0000';
     const parentId = channel.parentId;
     const typeEntry = Object.entries(tickets).find(([, type]) => type.category && type.category === parentId);
@@ -105,8 +105,8 @@ async function syncTicketCounter() {
         if (!channels) continue;
         for (const channel of channels.values()) {
             if (!channel?.isTextBased?.()) continue;
-            const match = channel.name.match(/^(?:ticket_|Closed-Climed-|ticket-)(\\d+)/i)
-                || channel.name.match(/^(\\d+)[_-]/);
+            const match = channel.name.match(/^(?:ticket_|Closed-Climed-|ticket-)(\d+)/i)
+                || channel.name.match(/^(\d+)[_-]/);
             if (match) maxNumber = Math.max(maxNumber, Number(match[1]) || 0);
         }
     }
