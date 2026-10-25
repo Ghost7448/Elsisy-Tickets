@@ -25,11 +25,9 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-// Railway: attach a Persistent Volume mounted at /data and set DATA_DIR=/data.
-const dataDirectory = process.env.DATA_DIR || '.';
-fs.mkdirSync(dataDirectory, { recursive: true });
-const counterFile = require('path').join(dataDirectory, 'ticket-counter.json');
-const dataFile = require('path').join(dataDirectory, 'ticket-data.json');
+// JSON files stored in the bot's working directory.
+const counterFile = './ticket-counter.json';
+const dataFile = './ticket-data.json';
 const banner = 'https://i.postimg.cc/XNdm9Wvw/file-00000000fac881f4bf8abe24be69b5d2.png';
 
 const tickets = {
