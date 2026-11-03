@@ -565,8 +565,10 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'rename_modal') {
-            // Acknowledge immediately so Discord does not expire the modal interaction.
+            console.log('[RENAME] Modal submit received:', interaction.id, 'channel:', interaction.channelId);
+            // Acknowledge the modal immediately, before reading data or calling Discord APIs.
             await interaction.deferReply({ ephemeral: true });
+            console.log('[RENAME] Interaction acknowledged:', interaction.id);
 
             const data = ticketData[interaction.channel.id];
             if (!isStaff(interaction.member)) return interaction.editReply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.' });
@@ -576,18 +578,27 @@ client.on('interactionCreate', async interaction => {
             if (!newName) return interaction.editReply({ content: '❌ اكتب اسمًا صالحًا للتذكرة.' });
             const oldName = interaction.channel.name;
             try {
+                console.log('[RENAME] Calling Discord setName:', interaction.channel.name, '=>', String(data.number) + '_' + newName);
                 await interaction.channel.setName(String(data.number) + '_' + newName, 'Ticket renamed by staff');
+                console.log('[RENAME] Discord setName succeeded:', interaction.channel.name);
                 data.currentName = interaction.channel.name;
                 saveTicketData();
                 await interaction.editReply({ content: '✅ تم تغيير اسم التذكرة إلى `' + interaction.channel.name + '`' });
+                console.log('[RENAME] Success response sent:', interaction.id);
                 sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
                     { name: '📝 الاسم السابق', value: '`' + oldName + '`', inline: true },
                     { name: '📝 الاسم الجديد', value: '`' + interaction.channel.name + '`', inline: true }
                 ]).catch(error => console.error('Rename action log failed:', error));
             } catch (error) {
-                console.error('Ticket rename failed:', error);
+                console.error('[RENAME] Failed:', {
+                    message: error?.message,
+                    code: error?.code,
+                    status: error?.status,
+                    rawError: error?.rawError,
+                    stack: error?.stack
+                });
                 const code = error && error.code ? ' (Code: ' + error.code + ')' : '';
-                return interaction.editReply({ content: '❌ مقدرتش أغير اسم التذكرة. جرّب تاني بعد شوية.' + code });
+                return interaction.editReply({ content: '❌ مقدرتش أغير اسم التذكرة. السبب: ' + (error?.message || 'خطأ غير معروف') + code }).catch(replyError => console.error('[RENAME] Could not send error reply:', replyError));
             }
             return;
         }
