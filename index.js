@@ -579,8 +579,8 @@ client.on('interactionCreate', async interaction => {
             await interaction.channel.setName(`${data.number}_${newName}`.slice(0, 100));
             data.currentName = interaction.channel.name; saveTicketData();
             await sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
-                { name: '📝 الاسم السابق', value: `\`${oldName}\`\`, inline: true },
-                { name: '📝 الاسم الجديد', value: `\`${interaction.channel.name}\`\`, inline: true }
+                { name: '📝 الاسم السابق', value: '`' + oldName + '`', inline: true },
+                { name: '📝 الاسم الجديد', value: '`' + interaction.channel.name + '`', inline: true }
             ]);
             return interaction.reply({ content: `✅ تم تغيير اسم التذكرة إلى \`${interaction.channel.name}\``, ephemeral: true });
         }
