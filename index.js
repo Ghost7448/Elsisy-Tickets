@@ -572,47 +572,17 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'rename_modal') {
-            console.log('[RENAME] Modal submit received:', interaction.id, 'channel:', interaction.channelId);
-            // Acknowledge the modal immediately, before reading data or calling Discord APIs.
-            await interaction.deferReply({ ephemeral: true });
-            console.log('[RENAME] Interaction acknowledged:', interaction.id);
-
             const data = ticketData[interaction.channel.id];
-            if (!isStaff(interaction.member)) return interaction.editReply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.' });
-            if (!data) return interaction.editReply({ content: '❌ بيانات التذكرة غير موجودة.' });
-
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
             const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\\u0600-\\u06FF-_]/g, '-').slice(0, 80);
-            if (!newName) return interaction.editReply({ content: '❌ اكتب اسمًا صالحًا للتذكرة.' });
             const oldName = interaction.channel.name;
-            try {
-                console.log('[RENAME] Calling Discord setName:', interaction.channel.name, '=>', String(data.number) + '_' + newName);
-                await interaction.channel.setName(String(data.number) + '_' + newName, 'Ticket renamed by staff');
-                console.log('[RENAME] Discord setName succeeded:', interaction.channel.name);
-                data.currentName = interaction.channel.name;
-                saveTicketData();
-                await interaction.editReply({ content: '✅ تم تغيير اسم التذكرة إلى `' + interaction.channel.name + '`' });
-                console.log('[RENAME] Success response sent:', interaction.id);
-                sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
-                    { name: '📝 الاسم السابق', value: '`' + oldName + '`', inline: true },
-                    { name: '📝 الاسم الجديد', value: '`' + interaction.channel.name + '`', inline: true }
-                ]).catch(error => console.error('Rename action log failed:', error));
-            } catch (error) {
-                console.error('[RENAME] Failed:', {
-                    message: error?.message,
-                    code: error?.code,
-                    status: error?.status,
-                    rawError: error?.rawError,
-                    stack: error?.stack
-                });
-                const retryAfter = Number(error?.rawError?.retry_after ?? error?.retryAfter ?? 0);
-                const isRateLimited = error?.status === 429 || error?.httpStatus === 429 || error?.code === 20028 || retryAfter > 0;
-                const code = error && error.code ? ' (Code: ' + error.code + ')' : '';
-                const failureMessage = isRateLimited
-                    ? '⏳ Discord فرض حدًا مؤقتًا على تغيير أسماء القنوات. استنى انتهاء مدة التقييد' + (retryAfter > 0 ? ' (حوالي ' + Math.ceil(retryAfter / 60) + ' دقيقة)' : '') + ' وبعدها جرّب تاني. ده حد من Discord نفسه ومش ممكن البوت يتخطاه.'
-                    : '❌ مقدرتش أغير اسم التذكرة. السبب: ' + (error?.message || 'خطأ غير معروف') + code;
-                return interaction.editReply({ content: failureMessage }).catch(replyError => console.error('[RENAME] Could not send error reply:', replyError));
-            }
-            return;
+            await interaction.channel.setName(`${data.number}_${newName}`.slice(0, 100));
+            data.currentName = interaction.channel.name; saveTicketData();
+            await sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
+                { name: '📝 الاسم السابق', value: `\`${oldName}\`\`, inline: true },
+                { name: '📝 الاسم الجديد', value: `\`${interaction.channel.name}\`\`, inline: true }
+            ]);
+            return interaction.reply({ content: `✅ تم تغيير اسم التذكرة إلى \`${interaction.channel.name}\``, ephemeral: true });
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'status_modal') {
