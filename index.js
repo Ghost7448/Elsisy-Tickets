@@ -604,8 +604,13 @@ client.on('interactionCreate', async interaction => {
                     rawError: error?.rawError,
                     stack: error?.stack
                 });
+                const retryAfter = Number(error?.rawError?.retry_after ?? error?.retryAfter ?? 0);
+                const isRateLimited = error?.status === 429 || error?.httpStatus === 429 || error?.code === 20028 || retryAfter > 0;
                 const code = error && error.code ? ' (Code: ' + error.code + ')' : '';
-                return interaction.editReply({ content: '❌ مقدرتش أغير اسم التذكرة. السبب: ' + (error?.message || 'خطأ غير معروف') + code }).catch(replyError => console.error('[RENAME] Could not send error reply:', replyError));
+                const failureMessage = isRateLimited
+                    ? '⏳ Discord فرض حدًا مؤقتًا على تغيير أسماء القنوات. استنى انتهاء مدة التقييد' + (retryAfter > 0 ? ' (حوالي ' + Math.ceil(retryAfter / 60) + ' دقيقة)' : '') + ' وبعدها جرّب تاني. ده حد من Discord نفسه ومش ممكن البوت يتخطاه.'
+                    : '❌ مقدرتش أغير اسم التذكرة. السبب: ' + (error?.message || 'خطأ غير معروف') + code;
+                return interaction.editReply({ content: failureMessage }).catch(replyError => console.error('[RENAME] Could not send error reply:', replyError));
             }
             return;
         }
