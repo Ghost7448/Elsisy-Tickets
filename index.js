@@ -567,15 +567,29 @@ client.on('interactionCreate', async interaction => {
         if (interaction.isModalSubmit() && interaction.customId === 'rename_modal') {
             const data = ticketData[interaction.channel.id];
             if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
-            const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\u0600-\u06FF-_]/g, '-').slice(0, 80);
+            if (!data) return interaction.reply({ content: '❌ بيانات التذكرة غير موجودة.', ephemeral: true });
+
+            const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\\u0600-\\u06FF-_]/g, '-').slice(0, 80);
+            if (!newName) return interaction.reply({ content: '❌ اكتب اسمًا صالحًا للتذكرة.', ephemeral: true });
+
+            // Acknowledge immediately to prevent Discord interaction timeout.
+            await interaction.deferReply({ ephemeral: true });
             const oldName = interaction.channel.name;
-            await interaction.channel.setName(`${data.number}_${newName}`.slice(0, 100));
-            data.currentName = interaction.channel.name; saveTicketData();
-            await sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
-                { name: '📝 الاسم السابق', value: `\`${oldName}\``, inline: true },
-                { name: '📝 الاسم الجديد', value: `\`${interaction.channel.name}\``, inline: true }
-            ]);
-            return interaction.reply({ content: `✅ تم تغيير اسم التذكرة إلى \`${interaction.channel.name}\``, ephemeral: true });
+            try {
+                await interaction.channel.setName(String(data.number) + '_' + newName, 'Ticket renamed by staff');
+                data.currentName = interaction.channel.name;
+                saveTicketData();
+                await interaction.editReply({ content: '✅ تم تغيير اسم التذكرة إلى `' + interaction.channel.name + '`' });
+                sendActionLog(interaction.channel.id, 'تم تغيير اسم التذكرة', interaction.user, [
+                    { name: '📝 الاسم السابق', value: '`' + oldName + '`', inline: true },
+                    { name: '📝 الاسم الجديد', value: '`' + interaction.channel.name + '`', inline: true }
+                ]).catch(error => console.error('Rename action log failed:', error));
+            } catch (error) {
+                console.error('Ticket rename failed:', error);
+                const code = error && error.code ? ' (Code: ' + error.code + ')' : '';
+                return interaction.editReply({ content: '❌ مقدرتش أغير اسم التذكرة. جرّب تاني بعد شوية.' + code });
+            }
+            return;
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'status_modal') {
