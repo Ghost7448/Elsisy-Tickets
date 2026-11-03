@@ -565,15 +565,15 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.isModalSubmit() && interaction.customId === 'rename_modal') {
+            // Acknowledge immediately so Discord does not expire the modal interaction.
+            await interaction.deferReply({ ephemeral: true });
+
             const data = ticketData[interaction.channel.id];
-            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
-            if (!data) return interaction.reply({ content: '❌ بيانات التذكرة غير موجودة.', ephemeral: true });
+            if (!isStaff(interaction.member)) return interaction.editReply({ content: '❌ هذه الخاصية متاحة فقط لأعضاء الـ Staff.' });
+            if (!data) return interaction.editReply({ content: '❌ بيانات التذكرة غير موجودة.' });
 
             const newName = interaction.fields.getTextInputValue('ticket_name').trim().toLowerCase().replace(/[^a-zA-Z0-9\\u0600-\\u06FF-_]/g, '-').slice(0, 80);
-            if (!newName) return interaction.reply({ content: '❌ اكتب اسمًا صالحًا للتذكرة.', ephemeral: true });
-
-            // Acknowledge immediately to prevent Discord interaction timeout.
-            await interaction.deferReply({ ephemeral: true });
+            if (!newName) return interaction.editReply({ content: '❌ اكتب اسمًا صالحًا للتذكرة.' });
             const oldName = interaction.channel.name;
             try {
                 await interaction.channel.setName(String(data.number) + '_' + newName, 'Ticket renamed by staff');
