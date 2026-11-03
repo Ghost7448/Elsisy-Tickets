@@ -299,6 +299,13 @@ const panelRow = new ActionRowBuilder().addComponents(panelMenu);
 client.once('clientReady', () => console.log(`${client.user.tag} جاهز`));
 
 client.on('interactionCreate', async interaction => {
+    console.log('[INTERACTION] Received:', {
+        type: interaction.type,
+        customId: interaction.customId || null,
+        commandName: interaction.commandName || null,
+        channelId: interaction.channelId || null,
+        userId: interaction.user?.id || null
+    });
     try {
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticket') {
             if (!interaction.member.roles.cache.has(process.env.TICKET_PANEL_ROLE))
@@ -632,7 +639,11 @@ client.on('interactionCreate', async interaction => {
                 if (!data?.claimedBy) return interaction.reply({ content: '❌ لا يمكن تغيير اسم التذكرة إلا بعد استلامها.', ephemeral: true });
                 const modal = new ModalBuilder().setCustomId('rename_modal').setTitle('✏️ تغيير اسم التذكرة');
                 modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_name').setLabel('الاسم الجديد').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)));
-                return interaction.showModal(modal);
+                console.log('[RENAME] Opening rename modal for:', interaction.channelId);
+                return interaction.showModal(modal).catch(error => {
+                    console.error('[RENAME] Failed to open modal:', error);
+                    throw error;
+                });
             }
             if (action === 'move') {
                 const menu = new StringSelectMenuBuilder().setCustomId('move_ticket_select').setPlaceholder('اختر القسم الجديد');
