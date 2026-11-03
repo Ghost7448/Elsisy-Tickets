@@ -250,6 +250,7 @@ function managementRow(disabled = false) {
 function ticketButtons(closed = false) {
     if (closed) {
         return new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('reopen_ticket').setLabel('إعادة فتح').setEmoji('🔓').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('delete_ticket').setLabel('حذف التذكرة').setEmoji('🗑️').setStyle(ButtonStyle.Danger)
         );
     }
@@ -476,6 +477,36 @@ client.on('interactionCreate', async interaction => {
             const reason = new TextInputBuilder().setCustomId('close_reason').setLabel('سبب إغلاق التذكرة').setPlaceholder('اكتب سبب إغلاق التذكرة هنا...').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(3).setMaxLength(500);
             modal.addComponents(new ActionRowBuilder().addComponents(reason));
             return interaction.showModal(modal);
+        }
+
+        if (interaction.isButton() && interaction.customId === 'reopen_ticket') {
+            if (!isStaff(interaction.member)) return interaction.reply({ content: '❌ إعادة فتح التذكرة متاحة فقط لأعضاء الـ Staff.', ephemeral: true });
+            const data = recoverTicketData(interaction.channel);
+            if (!data) return interaction.reply({ content: '❌ بيانات التذكرة غير موجودة.', ephemeral: true });
+            if (data.status !== 'مغلقة') return interaction.reply({ content: '❌ التذكرة مفتوحة بالفعل.', ephemeral: true });
+            if (!data.ownerId) return interaction.reply({ content: '❌ لم أتمكن من تحديد صاحب التذكرة.', ephemeral: true });
+
+            await interaction.deferUpdate();
+            await interaction.channel.permissionOverwrites.edit(data.ownerId, {
+                ViewChannel: true,
+                SendMessages: true,
+                ReadMessageHistory: true
+            });
+            data.status = 'مفتوحة';
+            data.reopenedBy = interaction.user.id;
+            data.reopenedAt = Date.now();
+            await interaction.channel.setName(`ticket_${data.number}_reopened`.slice(0, 100));
+            saveTicketData();
+            await updateTicketLog(interaction.channel.id);
+            await sendActionLog(interaction.channel.id, 'تم إعادة فتح التذكرة', interaction.user, [
+                { name: '👤 صاحب التذكرة', value: `<@${data.ownerId}>`, inline: true }
+            ]);
+            const reopenEmbed = new EmbedBuilder()
+                .setColor('#00cc66')
+                .setTitle('🔓 تم إعادة فتح التذكرة')
+                .setDescription(`تم إعادة فتح التذكرة بواسطة ${interaction.user}.\nيمكن لصاحب التذكرة الآن إرسال الرسائل مرة أخرى.`)
+                .setTimestamp();
+            return interaction.message.edit({ embeds: [reopenEmbed], components: [ticketButtons()] });
         }
 
         if (interaction.isButton() && interaction.customId === 'delete_ticket') {
